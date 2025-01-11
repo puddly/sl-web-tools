@@ -19,9 +19,16 @@ try:
 except ImportError:
     sys.modules["termios"] = object()  # type: ignore[assignment]
 
+class MockSqlite3:
+    sqlite_version = "3.31.1"
+    sqlite_version_info = (3, 31, 1)
+try:
+    import sqlite3  # noqa: F401
+except ImportError:
+    sys.modules["sqlite3"] = MockSqlite3()
 
 _SERIAL_PORT = None
-_SERIAL_PORT_CLOSING_QUEUE = []
+_SERIAL_PORT_CLOSING_TASKS = []
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -106,14 +113,24 @@ class WebSerialTransport(asyncio.Transport):
             self._js_writer.releaseLock()
             self._js_writer = None
 
+        closing_task = None
+
         if self._port is not None:
-            _SERIAL_PORT_CLOSING_QUEUE.append(
-                asyncio.create_task(close_port(self._port))
-            )
+            closing_task = asyncio.create_task(close_port(self._port))
+            _SERIAL_PORT_CLOSING_TASKS.append(closing_task)
             self._port = None
 
         if self._protocol is not None:
-            self._protocol.connection_lost(exception)
+            if closing_task is None:
+                self._protocol.connection_lost(exception)
+            else:
+                closing_task.add_done_callback(
+                    lambda _, protocol=self._protocol: protocol.connection_lost(exception)
+                )
+                closing_task.add_done_callback(
+                    lambda _: _SERIAL_PORT_CLOSING_TASKS.remove(closing_task)
+                )
+
             self._protocol = None
 
     def close(self) -> None:
@@ -136,11 +153,12 @@ async def create_serial_connection(
     rtscts=False,
     xonxoff=False,
 ) -> tuple[WebSerialTransport, asyncio.Protocol]:
-    # XXX: Since asyncio's `transport.close` is synchronous but JavaScript's is not, we
-    # must delegate closing to a task and then "block" at the next asynchronous entry
-    # point to allow the serial port to be re-opened immediately after being closed
-    while _SERIAL_PORT_CLOSING_QUEUE:
-        await _SERIAL_PORT_CLOSING_QUEUE.pop()
+    while _SERIAL_PORT_CLOSING_TASKS:
+        _LOGGER.warning(
+            "Serial connection was not closed before a new one was opened!"
+            " Waiting before opening a new one."
+        )
+        await _SERIAL_PORT_CLOSING_TASKS.pop()
 
     # `url` is ignored, `_SERIAL_PORT` is used instead
     await _SERIAL_PORT.open(
@@ -154,7 +172,7 @@ async def create_serial_connection(
     return transport, protocol
 
 
-# Directly patch pyserial-asyncio
-import serial_asyncio
 
-serial_asyncio.create_serial_connection = create_serial_connection
+# Directly patch zigpy-serial
+import zigpy.serial
+zigpy.serial.create_serial_connection = create_serial_connection

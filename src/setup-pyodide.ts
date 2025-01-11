@@ -30,6 +30,9 @@ const MOCKED_MODULES: PythonPackageSpec[] = [
   { package: 'pure-pcapy3', module: 'pure_pcapy3' },
   { package: 'idna', module: 'idna' },
   { package: 'typing_extensions', module: 'typing_extensions' },
+  { package: 'gpiod', module: 'gpiod' },
+  { package: 'rpds', module: 'rpds' },
+  { package: 'rpds-py', module: 'rpds-py' },
 
   // Internal modules not bundled by default with pyodide
   { package: 'ssl', module: 'ssl', version: '1.0.0' },
@@ -60,8 +63,9 @@ async function loadPyodide(): Promise<Pyodide> {
 
 function parseRequirementsTxt(requirementsTxt: string): Map<string, string> {
   const packages = new Map<string, string>();
+  const lineEnding = requirementsTxt.includes('\r\n') ? '\r\n' : '\n';
 
-  for (const line of requirementsTxt.trim().split('\n')) {
+  for (const line of requirementsTxt.trim().split(lineEnding)) {
     const [pkg, version] = line.split('==');
     packages.set(pkg, version);
   }
