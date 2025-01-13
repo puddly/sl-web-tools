@@ -83,6 +83,22 @@ class WebSerialTransport(asyncio.Transport):
 
             self._protocol.data_received(bytes(result.value))
 
+    async def set_signals(
+        self, rts: bool | None = None, dtr: bool | None = None, **kwargs: bool | None
+    ) -> None:
+        if kwargs:
+            _LOGGER.warning("Ignoring unsupported flow control options: %s", kwargs)
+
+        signals = {}
+
+        if rts is not None:
+            signals["requestToSend"] = rts
+
+        if dtr is not None:
+            signals["dataTerminalReady"] = dtr
+
+        await self._port.setSignals(signals)
+
     def write(self, data: bytes) -> None:
         self._write_queue.put_nowait(data)
 
