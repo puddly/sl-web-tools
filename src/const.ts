@@ -33,7 +33,7 @@ export enum FirmwareType {
 }
 
 export enum BootloaderGpioReset {
-  RTS_DTR = 'rts-dtr',
+  RTS_DTR = 'rts_dtr',
 }
 
 export const LegacyTypeToFirmwareType = {
